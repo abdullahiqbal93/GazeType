@@ -1,0 +1,39 @@
+'use client';
+
+import React from 'react';
+import { Point2D } from '@/lib/types';
+
+interface GazeCursorProps {
+  point: Point2D | null;
+  visible: boolean;
+  debug?: boolean;
+}
+
+/**
+ * Renders a floating gaze cursor that follows the estimated gaze position.
+ */
+export default function GazeCursor({ point, visible, debug }: GazeCursorProps) {
+  if (!visible || !point) return null;
+
+  return (
+    <div
+      className="fixed pointer-events-none z-[9999]"
+      style={{
+        left: point.x - 16,
+        top: point.y - 16,
+        transition: 'left 0.05s linear, top 0.05s linear',
+      }}
+    >
+      {/* Main cursor dot */}
+      <div className="w-8 h-8 rounded-full border-2 border-cyan-400 bg-cyan-400/20 flex items-center justify-center">
+        <div className="w-2 h-2 rounded-full bg-cyan-400" />
+      </div>
+      {/* Debug coordinates */}
+      {debug && (
+        <div className="mt-1 text-[10px] text-cyan-300 bg-black/70 px-1 rounded whitespace-nowrap">
+          {Math.round(point.x)}, {Math.round(point.y)}
+        </div>
+      )}
+    </div>
+  );
+}
