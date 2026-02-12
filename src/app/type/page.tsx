@@ -26,6 +26,7 @@ export default function TypePage() {
   const [calibration, setCalibration] = useState<CalibrationModel | null>(null);
   const [settings, setSettings] = useState<UserSettings>(DEFAULT_SETTINGS);
   const [typedText, setTypedText] = useState('');
+  const [cursorPos, setCursorPos] = useState(0);
   const [gazePoint, setGazePoint] = useState<Point2D | null>(null);
   const [shifted, setShifted] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -104,19 +105,32 @@ export default function TypePage() {
   const handleKeySelect = useCallback((key: KeyDef) => {
     switch (key.type) {
       case 'char':
-      case 'space':
+      case 'space': {
         const char = key.type === 'char' && shifted ? key.value.toUpperCase() : key.value;
-        setTypedText((prev) => prev + char);
+        setTypedText((prev) => prev.slice(0, cursorPos) + char + prev.slice(cursorPos));
+        setCursorPos((pos) => pos + 1);
         if (shifted) setShifted(false);
         break;
+      }
       case 'enter':
-        setTypedText((prev) => prev + '\n');
+        setTypedText((prev) => prev.slice(0, cursorPos) + '\n' + prev.slice(cursorPos));
+        setCursorPos((pos) => pos + 1);
         break;
       case 'backspace':
-        setTypedText((prev) => prev.slice(0, -1));
+        if (cursorPos > 0) {
+          setTypedText((prev) => prev.slice(0, cursorPos - 1) + prev.slice(cursorPos));
+          setCursorPos((pos) => pos - 1);
+        }
+        break;
+      case 'left':
+        setCursorPos((pos) => Math.max(0, pos - 1));
+        break;
+      case 'right':
+        setCursorPos((pos) => Math.min(typedText.length, pos + 1));
         break;
       case 'clear':
         setTypedText('');
+        setCursorPos(0);
         break;
       case 'tts':
         if (typedText.trim()) {
@@ -124,25 +138,21 @@ export default function TypePage() {
         }
         break;
     }
-  }, [shifted, typedText, settings.ttsVoice, settings.ttsRate]);
+  }, [shifted, typedText, cursorPos, settings.ttsVoice, settings.ttsRate]);
 
   // Handle prediction selection
   const handlePredictionSelect = useCallback((word: string) => {
     setTypedText((prev) => {
-      // Replace partial word with prediction
-      const words = prev.split(/(\s+)/);
-      // Find last actual word (skip trailing whitespace)
-      let lastWordIdx = words.length - 1;
-      while (lastWordIdx >= 0 && /^\s*$/.test(words[lastWordIdx])) {
-        lastWordIdx--;
-      }
-      if (lastWordIdx >= 0) {
-        words[lastWordIdx] = word;
-      }
-      return words.join('') + ' ';
+      const beforeCursor = prev.slice(0, cursorPos);
+      const afterCursor = prev.slice(cursorPos);
+      const match = beforeCursor.match(/(\S+)$/);
+      const partialLen = match ? match[1].length : 0;
+      const newBefore = beforeCursor.slice(0, beforeCursor.length - partialLen) + word + ' ';
+      setCursorPos(newBefore.length);
+      return newBefore + afterCursor;
     });
     if (settings.audioFeedback) playClick();
-  }, [settings.audioFeedback]);
+  }, [settings.audioFeedback, cursorPos]);
 
   // Handle settings update
   const handleSettingsUpdate = useCallback((updates: Partial<UserSettings>) => {
@@ -235,12 +245,20 @@ export default function TypePage() {
                   : 'bg-gray-800 border border-gray-700 text-white'
               }`}
             >
-              {typedText || (
-                <span className="text-gray-500 italic">
-                  Start typing by looking at the keyboard below...
-                </span>
+              {typedText.length === 0 && cursorPos === 0 ? (
+                <>
+                  <span className="animate-pulse text-cyan-400">|</span>
+                  <span className="text-gray-500 italic">
+                    Start typing by looking at the keyboard below...
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span>{typedText.slice(0, cursorPos)}</span>
+                  <span className="animate-pulse text-cyan-400">|</span>
+                  <span>{typedText.slice(cursorPos)}</span>
+                </>
               )}
-              <span className="animate-pulse text-cyan-400">|</span>
             </div>
           </div>
         </div>

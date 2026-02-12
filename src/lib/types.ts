@@ -126,5 +126,5 @@ export interface KeyDef {
   /** Width multiplier (1 = normal) */
   width?: number;
   /** Special key type */
-  type?: 'char' | 'space' | 'backspace' | 'enter' | 'clear' | 'shift' | 'tts';
+  type?: 'char' | 'space' | 'backspace' | 'enter' | 'clear' | 'shift' | 'tts' | 'left' | 'right';
 }

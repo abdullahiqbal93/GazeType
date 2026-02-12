@@ -57,6 +57,8 @@ export const KEYBOARD_ROWS: KeyDef[][] = [
   ],
   // Row 5: special keys
   [
+    { label: '◀', value: '', type: 'left' },
+    { label: '▶', value: '', type: 'right' },
     { label: ',', value: ',', type: 'char' },
     { label: '.', value: '.', type: 'char' },
     { label: '?', value: '?', type: 'char' },
