@@ -73,14 +73,21 @@ export default function CalibratePage() {
 
       const { ratios, headPose } = tracker.getLastRatios();
       if (ratios) {
-        samplesRef.current.push({
-          target,
-          ratios,
-          headPose: headPose || undefined,
-          timestamp: Date.now(),
-        });
-        collected++;
-        setSampleCount(collected);
+        // Basic validity check: reject if eye is likely closed (ratio near 0 or 1)
+        const valid =
+          ratios.avgX > 0.05 && ratios.avgX < 0.95 &&
+          ratios.avgY > 0.05 && ratios.avgY < 0.95;
+
+        if (valid) {
+          samplesRef.current.push({
+            target,
+            ratios,
+            headPose: headPose || undefined,
+            timestamp: Date.now(),
+          });
+          collected++;
+          setSampleCount(collected);
+        }
 
         if (collected >= SAMPLES_PER_POINT) {
           collectingRef.current = false;
@@ -116,7 +123,7 @@ export default function CalibratePage() {
       // Small delay before starting to collect, so user has time to look at the dot
       const timer = setTimeout(() => {
         startCollecting(currentPoint);
-      }, 800);
+      }, 1200);
       return () => clearTimeout(timer);
     }
   }, [step, currentPoint, startCollecting]);

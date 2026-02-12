@@ -14,15 +14,19 @@ describe('buildFeatureVector', () => {
 
     const features = buildFeatureVector(ratios);
 
-    expect(features).toHaveLength(8); // 5 base + 2 pose + 1 bias
-    expect(features[0]).toBeCloseTo(0.45); // avgX
-    expect(features[1]).toBeCloseTo(0.55); // avgY
-    expect(features[2]).toBeCloseTo(0.45 * 0.45); // avgX²
-    expect(features[3]).toBeCloseTo(0.55 * 0.55); // avgY²
-    expect(features[4]).toBeCloseTo(0.45 * 0.55); // avgX*avgY
-    expect(features[5]).toBe(0); // yaw (no pose)
-    expect(features[6]).toBe(0); // pitch (no pose)
-    expect(features[7]).toBe(1); // bias
+    expect(features).toHaveLength(12); // 4 per-eye + 5 avg-based + 2 pose + 1 bias
+    expect(features[0]).toBeCloseTo(0.4);  // leftEyeX
+    expect(features[1]).toBeCloseTo(0.6);  // leftEyeY
+    expect(features[2]).toBeCloseTo(0.5);  // rightEyeX
+    expect(features[3]).toBeCloseTo(0.5);  // rightEyeY
+    expect(features[4]).toBeCloseTo(0.45); // avgX
+    expect(features[5]).toBeCloseTo(0.55); // avgY
+    expect(features[6]).toBeCloseTo(0.45 * 0.45); // avgX²
+    expect(features[7]).toBeCloseTo(0.55 * 0.55); // avgY²
+    expect(features[8]).toBeCloseTo(0.45 * 0.55); // avgX*avgY
+    expect(features[9]).toBe(0); // yaw (no pose)
+    expect(features[10]).toBe(0); // pitch (no pose)
+    expect(features[11]).toBe(1); // bias
   });
 
   it('should include head pose when provided', () => {
@@ -34,8 +38,8 @@ describe('buildFeatureVector', () => {
 
     const features = buildFeatureVector(ratios, { yaw: 10, pitch: -5, roll: 0 });
 
-    expect(features[5]).toBeCloseTo(10 / 45); // normalized yaw
-    expect(features[6]).toBeCloseTo(-5 / 45); // normalized pitch
+    expect(features[9]).toBeCloseTo(10 / 45); // normalized yaw
+    expect(features[10]).toBeCloseTo(-5 / 45); // normalized pitch
   });
 });
 
@@ -47,9 +51,9 @@ describe('gazeToScreen', () => {
       avgX: 0.5, avgY: 0.5,
     };
 
-    // Simple identity-like weights: x = avgX * 1000, y = avgY * 1000
-    const weightsX = [1000, 0, 0, 0, 0, 0, 0, 0];
-    const weightsY = [0, 1000, 0, 0, 0, 0, 0, 0];
+    // Weight on avgX (index 4) maps to screen X, avgY (index 5) maps to screen Y
+    const weightsX = [0, 0, 0, 0, 1000, 0, 0, 0, 0, 0, 0, 0];
+    const weightsY = [0, 0, 0, 0, 0, 1000, 0, 0, 0, 0, 0, 0];
 
     const point = gazeToScreen(ratios, weightsX, weightsY);
 
@@ -64,12 +68,30 @@ describe('gazeToScreen', () => {
       avgX: 0, avgY: 0,
     };
 
-    const weightsX = [0, 0, 0, 0, 0, 0, 0, 100]; // bias = 100
-    const weightsY = [0, 0, 0, 0, 0, 0, 0, 200]; // bias = 200
+    const weightsX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 100]; // bias = 100
+    const weightsY = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 200]; // bias = 200
 
     const point = gazeToScreen(ratios, weightsX, weightsY);
 
     expect(point.x).toBeCloseTo(100);
     expect(point.y).toBeCloseTo(200);
+  });
+
+  it('should clamp output to screen bounds', () => {
+    const ratios: GazeRatios = {
+      leftEyeX: 0.5, leftEyeY: 0.5,
+      rightEyeX: 0.5, rightEyeY: 0.5,
+      avgX: 0.5, avgY: 0.5,
+    };
+
+    // Weights that produce very large output
+    const weightsX = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 50000];
+    const weightsY = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -50000];
+
+    const point = gazeToScreen(ratios, weightsX, weightsY, null, 1920, 1080);
+
+    // Should be clamped within bounds + margin
+    expect(point.x).toBeLessThanOrEqual(1940);
+    expect(point.y).toBeGreaterThanOrEqual(-20);
   });
 });

@@ -199,10 +199,19 @@ export function computeEAR(landmarks: Landmark[], eye: 'left' | 'right'): number
 
 /**
  * Build the feature vector used for calibration regression.
- * Features: [avgX, avgY, avgX², avgY², avgX*avgY, headYaw, headPitch, 1(bias)]
+ * 12 features for richer gaze mapping:
+ * [leftX, leftY, rightX, rightY, avgX, avgY, avgX², avgY², avgX*avgY,
+ *  headYaw, headPitch, 1(bias)]
+ *
+ * Using per-eye ratios alongside averages gives the model more information
+ * to handle asymmetric eye movements and camera angles.
  */
 export function buildFeatureVector(ratios: GazeRatios, headPose?: HeadPose | null): number[] {
   const features = [
+    ratios.leftEyeX,
+    ratios.leftEyeY,
+    ratios.rightEyeX,
+    ratios.rightEyeY,
     ratios.avgX,
     ratios.avgY,
     ratios.avgX * ratios.avgX,
@@ -224,12 +233,15 @@ export function buildFeatureVector(ratios: GazeRatios, headPose?: HeadPose | nul
 
 /**
  * Get the gaze point on screen given calibration weights.
+ * Output is clamped to screen bounds to prevent the cursor from flying off-screen.
  */
 export function gazeToScreen(
   ratios: GazeRatios,
   weightsX: number[],
   weightsY: number[],
-  headPose?: HeadPose | null
+  headPose?: HeadPose | null,
+  screenWidth = 1920,
+  screenHeight = 1080
 ): Point2D {
   const features = buildFeatureVector(ratios, headPose);
 
@@ -239,6 +251,11 @@ export function gazeToScreen(
     x += features[i] * weightsX[i];
     y += features[i] * weightsY[i];
   }
+
+  // Clamp to screen bounds with small margin
+  const margin = 20;
+  x = Math.max(-margin, Math.min(screenWidth + margin, x));
+  y = Math.max(-margin, Math.min(screenHeight + margin, y));
 
   return { x, y };
 }

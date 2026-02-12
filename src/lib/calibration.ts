@@ -15,7 +15,7 @@ import { buildFeatureVector } from './gazeMath';
 export const CALIBRATION_POINTS = 9;
 
 /** Samples to collect per calibration point */
-export const SAMPLES_PER_POINT = 30;
+export const SAMPLES_PER_POINT = 40;
 
 /** Ridge regression regularization parameter */
 const RIDGE_LAMBDA = 1.0;
@@ -51,6 +51,9 @@ export function generateCalibrationPoints(
  * Fit ridge regression model from calibration samples.
  * Solves: w = (X^T X + λI)^{-1} X^T y
  * 
+ * Includes outlier rejection: removes samples whose gaze ratios deviate
+ * more than 2 standard deviations from the mean for each calibration point.
+ * 
  * @param samples - Collected calibration samples
  * @returns CalibrationModel with weights for X and Y prediction
  */
@@ -59,15 +62,21 @@ export function fitCalibrationModel(samples: CalibrationSample[]): CalibrationMo
     throw new Error(`Need at least 9 samples, got ${samples.length}`);
   }
 
-  const n = samples.length;
-  const featureVectors = samples.map((s) =>
+  // Outlier rejection: group samples by target, remove outliers per group
+  const cleaned = rejectOutliers(samples);
+  if (cleaned.length < 9) {
+    throw new Error(`Only ${cleaned.length} valid samples after outlier rejection`);
+  }
+
+  const n = cleaned.length;
+  const featureVectors = cleaned.map((s) =>
     buildFeatureVector(s.ratios, s.headPose)
   );
   const d = featureVectors[0].length; // feature dimension
 
   // Build X matrix (n x d) and y vectors
-  const targetX = samples.map((s) => s.target.x);
-  const targetY = samples.map((s) => s.target.y);
+  const targetX = cleaned.map((s) => s.target.x);
+  const targetY = cleaned.map((s) => s.target.y);
 
   // Compute X^T X (d x d)
   const XtX: number[][] = Array.from({ length: d }, () => new Array(d).fill(0));
@@ -124,6 +133,53 @@ export function fitCalibrationModel(samples: CalibrationSample[]): CalibrationMo
     calibratedAt: Date.now(),
     sampleCount: n,
   };
+}
+
+/**
+ * Reject outlier calibration samples.
+ * Groups samples by target point, then removes any whose avgX or avgY
+ * ratios are more than 2 standard deviations from the group mean.
+ * Also discards the first 5 samples per point (settling time).
+ */
+function rejectOutliers(samples: CalibrationSample[]): CalibrationSample[] {
+  // Group by target point (using stringified coords as key)
+  const groups = new Map<string, CalibrationSample[]>();
+  for (const s of samples) {
+    const key = `${s.target.x.toFixed(0)}_${s.target.y.toFixed(0)}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(s);
+  }
+
+  const cleaned: CalibrationSample[] = [];
+
+  for (const group of groups.values()) {
+    // Discard first 5 samples (user still settling gaze)
+    const settled = group.slice(5);
+    if (settled.length < 3) {
+      // Too few samples, keep them all
+      cleaned.push(...settled);
+      continue;
+    }
+
+    // Compute mean and std for avgX and avgY
+    const avgXs = settled.map((s) => s.ratios.avgX);
+    const avgYs = settled.map((s) => s.ratios.avgY);
+    const meanX = avgXs.reduce((a, b) => a + b, 0) / avgXs.length;
+    const meanY = avgYs.reduce((a, b) => a + b, 0) / avgYs.length;
+    const stdX = Math.sqrt(avgXs.reduce((a, v) => a + (v - meanX) ** 2, 0) / avgXs.length);
+    const stdY = Math.sqrt(avgYs.reduce((a, v) => a + (v - meanY) ** 2, 0) / avgYs.length);
+
+    const threshold = 2;
+    for (const s of settled) {
+      const xOk = stdX < 1e-6 || Math.abs(s.ratios.avgX - meanX) <= threshold * stdX;
+      const yOk = stdY < 1e-6 || Math.abs(s.ratios.avgY - meanY) <= threshold * stdY;
+      if (xOk && yOk) {
+        cleaned.push(s);
+      }
+    }
+  }
+
+  return cleaned;
 }
 
 /**

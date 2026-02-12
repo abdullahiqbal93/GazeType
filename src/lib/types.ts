@@ -103,7 +103,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   ttsRate: 1.0,
   predictionsEnabled: true,
   debugMode: false,
-  smoothingFactor: 0.3,
+  smoothingFactor: 0.5,
   blinkThreshold: 0.21,
 };
 

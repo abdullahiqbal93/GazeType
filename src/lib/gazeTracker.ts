@@ -200,11 +200,15 @@ export class GazeTracker {
     // Map to screen coordinates if calibrated
     let gazePoint: Point2D | null = null;
     if (ratios && this.calibrationModel) {
+      const screenW = typeof window !== 'undefined' ? window.innerWidth : 1920;
+      const screenH = typeof window !== 'undefined' ? window.innerHeight : 1080;
       const raw = gazeToScreen(
         ratios,
         this.calibrationModel.weightsX,
         this.calibrationModel.weightsY,
-        headPose
+        headPose,
+        screenW,
+        screenH
       );
       gazePoint = this.smoother.smooth(raw);
     }
