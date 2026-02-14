@@ -25,7 +25,7 @@ export default function DebugOverlay({
   if (!visible) return null;
 
   return (
-    <div className="fixed top-2 right-2 z-50 bg-black/80 text-green-400 text-xs font-mono p-3 rounded-lg min-w-[200px]">
+    <div className="fixed top-2 right-2 z-30 bg-black/80 text-green-400 text-xs font-mono p-3 rounded-lg min-w-[200px] pointer-events-none">
       <div className="font-bold text-green-300 mb-1">DEBUG</div>
       <div>FPS: {fps}</div>
       <div>Calibrated: {calibrated ? '✓' : '✗'}</div>

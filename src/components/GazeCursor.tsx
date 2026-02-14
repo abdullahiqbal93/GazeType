@@ -21,7 +21,6 @@ export default function GazeCursor({ point, visible, debug }: GazeCursorProps) {
       style={{
         left: point.x - 16,
         top: point.y - 16,
-        transition: 'left 0.05s linear, top 0.05s linear',
       }}
     >
       {/* Main cursor dot */}

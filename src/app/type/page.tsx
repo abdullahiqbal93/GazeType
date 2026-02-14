@@ -18,6 +18,7 @@ import { getPredictions, extractCurrentAndPrevWord } from '@/lib/ngram';
 import { speak, playClick } from '@/lib/tts';
 import { TypingAnalyticsTracker } from '@/lib/analytics';
 import { ContinuousCalibrator } from '@/lib/continuousCalibration';
+import { KEYBOARD_ROWS } from '@/lib/keyboardLayout';
 
 /**
  * Main typing page: camera preview, gaze cursor, keyboard, text area,
@@ -174,15 +175,6 @@ export default function TypePage() {
     trackerRef.current = tracker;
   }, []);
 
-  // Handle blink selection
-  const handleBlink = useCallback(() => {
-    if (settings.blinkSelectEnabled) {
-      // Blink acts as a "click" at current gaze position
-      // The keyboard's dwell logic handles actual selection
-      if (settings.audioFeedback) playClick();
-    }
-  }, [settings.blinkSelectEnabled, settings.audioFeedback]);
-
   // Handle key selection
   const handleKeySelect = useCallback((key: KeyDef) => {
     const isBackspace = key.type === 'backspace';
@@ -254,6 +246,45 @@ export default function TypePage() {
     }
   }, [handleKeySelect, settings.continuousCalibration]);
 
+  // Handle blink selection — immediately select the key under gaze
+  const handleBlink = useCallback(() => {
+    if (!settings.blinkSelectEnabled) return;
+
+    // Find the key element under the current gaze point via DOM hit testing
+    if (gazePoint) {
+      const container = document.querySelector('[data-keyboard-container]');
+      if (container) {
+        const keys = container.querySelectorAll('[data-key-id]');
+        for (const keyEl of keys) {
+          const rect = keyEl.getBoundingClientRect();
+          if (
+            gazePoint.x >= rect.left &&
+            gazePoint.x <= rect.right &&
+            gazePoint.y >= rect.top &&
+            gazePoint.y <= rect.bottom
+          ) {
+            const rowIdx = parseInt(keyEl.getAttribute('data-row') || '0');
+            const colIdx = parseInt(keyEl.getAttribute('data-col') || '0');
+            const keyDef = KEYBOARD_ROWS[rowIdx]?.[colIdx];
+            if (keyDef) {
+              const center: Point2D = {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2,
+              };
+              if (keyDef.type === 'shift') {
+                setShifted((s) => !s);
+              } else {
+                handleKeySelectWithCalibration(keyDef, center);
+              }
+              if (settings.audioFeedback) playClick();
+              return;
+            }
+          }
+        }
+      }
+    }
+  }, [settings.blinkSelectEnabled, settings.audioFeedback, gazePoint, handleKeySelectWithCalibration]);
+
   // Handle prediction selection
   const handlePredictionSelect = useCallback((word: string) => {
     setTypedText((prev) => {
@@ -281,6 +312,13 @@ export default function TypePage() {
   const handleStopCamera = useCallback(() => {
     webcamRef.current?.stop();
     setCameraActive(false);
+    setGazePoint(null);
+    setVideoEl(null);
+  }, []);
+
+  // Start camera (re-mount webcam)
+  const handleStartCamera = useCallback(() => {
+    setCameraActive(true);
   }, []);
 
   // No calibration redirect
@@ -311,12 +349,19 @@ export default function TypePage() {
           <h1 className="font-bold text-lg">GazeType</h1>
         </div>
         <div className="flex items-center gap-2">
-          {cameraActive && (
+          {cameraActive ? (
             <button
               onClick={handleStopCamera}
               className="text-xs bg-red-600/80 hover:bg-red-500 px-3 py-1.5 rounded-lg"
             >
               Stop Camera
+            </button>
+          ) : (
+            <button
+              onClick={handleStartCamera}
+              className="text-xs bg-green-600/80 hover:bg-green-500 px-3 py-1.5 rounded-lg"
+            >
+              Start Camera
             </button>
           )}
           <button
@@ -340,14 +385,23 @@ export default function TypePage() {
         <div className="flex gap-4">
           {/* Webcam */}
           <div className="flex-shrink-0">
-            <Webcam
-              ref={webcamRef}
-              onStream={handleWebcamStream}
-              showPreview={true}
-              width={240}
-              height={180}
-              className="rounded-lg overflow-hidden"
-            />
+            {cameraActive ? (
+              <Webcam
+                ref={webcamRef}
+                onStream={handleWebcamStream}
+                showPreview={true}
+                width={240}
+                height={180}
+                className="rounded-lg overflow-hidden"
+              />
+            ) : (
+              <div
+                className="rounded-lg bg-gray-800 flex items-center justify-center text-gray-500"
+                style={{ width: 240, height: 180 }}
+              >
+                Camera Off
+              </div>
+            )}
           </div>
 
           {/* Text area */}

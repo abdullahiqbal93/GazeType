@@ -125,6 +125,7 @@ export default function VirtualKeyboard({
   return (
     <div
       ref={containerRef}
+      data-keyboard-container
       className={`${hcBg} p-4 rounded-xl shadow-xl select-none`}
     >
       {KEYBOARD_ROWS.map((row, rowIdx) => (

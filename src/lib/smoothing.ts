@@ -125,11 +125,12 @@ export class GazeSmoother {
    *   Default 0.5 for good balance. The alpha param is kept for API compat.
    * @param jitterThreshold - Minimum px movement to avoid micro-jitter. Default 2.
    */
-  constructor(alpha = 0.5, jitterThreshold = 2) {
+  constructor(alpha = 0.5, jitterThreshold = 1.5) {
     // Map alpha to One-Euro params:
     // Higher alpha → higher beta (less lag) and higher minCutoff (less smoothing)
-    const minCutoff = 0.8 + alpha * 1.5;   // 0.8 – 2.3 Hz
-    const beta = 0.001 + alpha * 0.015;     // 0.001 – 0.016
+    // Beta must be large enough to make the cursor responsive to eye movements
+    const minCutoff = 1.0 + alpha * 3.0;   // 1.0 – 4.0 Hz
+    const beta = 0.3 + alpha * 0.7;        // 0.3 – 1.0
     this.filterX = new OneEuroFilter1D(30, minCutoff, beta);
     this.filterY = new OneEuroFilter1D(30, minCutoff, beta);
     this.jitterThreshold = jitterThreshold;
@@ -140,8 +141,8 @@ export class GazeSmoother {
    */
   setAlpha(alpha: number): void {
     const clamped = Math.max(0.05, Math.min(1, alpha));
-    const minCutoff = 0.8 + clamped * 1.5;
-    const beta = 0.001 + clamped * 0.015;
+    const minCutoff = 1.0 + clamped * 3.0;
+    const beta = 0.3 + clamped * 0.7;
     this.filterX.setParams(minCutoff, beta);
     this.filterY.setParams(minCutoff, beta);
   }
