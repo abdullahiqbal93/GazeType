@@ -9,11 +9,15 @@ import VirtualKeyboard from '@/components/VirtualKeyboard';
 import PredictionBar from '@/components/PredictionBar';
 import SettingsPanel from '@/components/SettingsPanel';
 import DebugOverlay from '@/components/DebugOverlay';
-import { GazeFrame } from '@/lib/gazeTracker';
-import { CalibrationModel, KeyDef, Point2D, UserSettings, DEFAULT_SETTINGS } from '@/lib/types';
+import AnalyticsPanel from '@/components/AnalyticsPanel';
+import { GazeTracker, GazeFrame } from '@/lib/gazeTracker';
+import { CalibrationModel, KeyDef, NeuralGazeModel, Point2D, TypingAnalytics, UserSettings, DEFAULT_SETTINGS } from '@/lib/types';
 import { loadCalibration, loadSettings, saveSettings } from '@/lib/storage';
+import { loadRidgeModel, loadNeuralModel } from '@/lib/idb';
 import { getPredictions, extractCurrentAndPrevWord } from '@/lib/ngram';
 import { speak, playClick } from '@/lib/tts';
+import { TypingAnalyticsTracker } from '@/lib/analytics';
+import { ContinuousCalibrator } from '@/lib/continuousCalibration';
 
 /**
  * Main typing page: camera preview, gaze cursor, keyboard, text area,
@@ -35,11 +39,25 @@ export default function TypePage() {
   const [noCalibration, setNoCalibration] = useState(false);
   const [cameraActive, setCameraActive] = useState(true);
 
+  // Analytics state
+  const analyticsRef = useRef<TypingAnalyticsTracker | null>(null);
+  const [liveAnalytics, setLiveAnalytics] = useState<TypingAnalytics | null>(null);
+  const [sessionDuration, setSessionDuration] = useState('0s');
+  const analyticsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Continuous calibration state
+  const continuousCalibratorRef = useRef<ContinuousCalibrator | null>(null);
+  const [implicitSampleCount, setImplicitSampleCount] = useState(0);
+  const trackerRef = useRef<GazeTracker | null>(null);
+
+  // Neural model state
+  const [neuralModel, setNeuralModel] = useState<NeuralGazeModel | null>(null);
+
   // Debug state
   const [debugFps, setDebugFps] = useState(0);
   const [debugRatios, setDebugRatios] = useState<{ avgX: number; avgY: number } | null>(null);
 
-  // Load calibration and settings on mount
+  // Load calibration, settings, and models on mount
   useEffect(() => {
     const cal = loadCalibration();
     const set = loadSettings();
@@ -50,6 +68,56 @@ export default function TypePage() {
     } else {
       setNoCalibration(true);
     }
+
+    // Load models from IndexedDB
+    loadRidgeModel()
+      .then((ridge) => {
+        if (ridge && !cal) {
+          setCalibration(ridge);
+        }
+      })
+      .catch(() => {});
+
+    loadNeuralModel()
+      .then((nn) => {
+        if (nn) setNeuralModel(nn);
+      })
+      .catch(() => {});
+
+    // Initialize analytics tracker
+    const tracker = new TypingAnalyticsTracker();
+    analyticsRef.current = tracker;
+
+    // Initialize continuous calibrator
+    const calibrator = new ContinuousCalibrator();
+    continuousCalibratorRef.current = calibrator;
+
+    // Set up continuous calibration callback
+    calibrator.setCallback((updatedRidge, updatedNeural) => {
+      if (updatedRidge) {
+        setCalibration(updatedRidge);
+      }
+      if (updatedNeural) {
+        setNeuralModel(updatedNeural);
+      }
+    });
+
+    // Analytics refresh interval
+    const interval = setInterval(() => {
+      if (analyticsRef.current) {
+        setLiveAnalytics(analyticsRef.current.getAnalytics());
+        setSessionDuration(analyticsRef.current.getSessionDuration());
+      }
+    }, 1000);
+    analyticsIntervalRef.current = interval;
+
+    return () => {
+      clearInterval(interval);
+      // Save session on unmount
+      if (analyticsRef.current) {
+        analyticsRef.current.endSession().catch(() => {});
+      }
+    };
   }, []);
 
   // Update predictions when text changes
@@ -72,7 +140,16 @@ export default function TypePage() {
         speak(lastSentence, settings.ttsVoice, settings.ttsRate);
       }
     }
+    // Update analytics with current text
+    if (analyticsRef.current) {
+      analyticsRef.current.setFinalText(typedText);
+    }
   }, [typedText, settings.autoSpeak, settings.ttsVoice, settings.ttsRate]);
+
+  // Keep continuous calibrator in sync with current models
+  useEffect(() => {
+    continuousCalibratorRef.current?.setModels(calibration, neuralModel);
+  }, [calibration, neuralModel]);
 
   // Handle webcam ready
   const handleWebcamStream = useCallback(() => {
@@ -92,6 +169,11 @@ export default function TypePage() {
     }
   }, []);
 
+  // Handle tracker ready (store reference for continuous calibration)
+  const handleTrackerReady = useCallback((tracker: GazeTracker) => {
+    trackerRef.current = tracker;
+  }, []);
+
   // Handle blink selection
   const handleBlink = useCallback(() => {
     if (settings.blinkSelectEnabled) {
@@ -103,6 +185,12 @@ export default function TypePage() {
 
   // Handle key selection
   const handleKeySelect = useCallback((key: KeyDef) => {
+    const isBackspace = key.type === 'backspace';
+    const isWordBoundary = key.type === 'space' || key.value === '.' || key.value === ',' || key.value === '!' || key.value === '?';
+
+    // Track analytics
+    analyticsRef.current?.recordKeystroke(key.type || 'char', isBackspace, isWordBoundary);
+
     switch (key.type) {
       case 'char':
       case 'space': {
@@ -115,6 +203,7 @@ export default function TypePage() {
       case 'enter':
         setTypedText((prev) => prev.slice(0, cursorPos) + '\n' + prev.slice(cursorPos));
         setCursorPos((pos) => pos + 1);
+        analyticsRef.current?.recordKeystroke('enter', false, true);
         break;
       case 'backspace':
         if (cursorPos > 0) {
@@ -139,6 +228,31 @@ export default function TypePage() {
         break;
     }
   }, [shifted, typedText, cursorPos, settings.ttsVoice, settings.ttsRate]);
+
+  // Handle key selection with continuous calibration feedback
+  const handleKeySelectWithCalibration = useCallback((key: KeyDef, keyCenter?: Point2D) => {
+    handleKeySelect(key);
+
+    // Record implicit calibration sample if continuous calibration is enabled
+    if (
+      settings.continuousCalibration &&
+      keyCenter &&
+      trackerRef.current &&
+      continuousCalibratorRef.current
+    ) {
+      const { ratios, headPose } = trackerRef.current.getLastRatios();
+      if (ratios) {
+        continuousCalibratorRef.current
+          .recordImplicitSample(keyCenter, ratios, headPose)
+          .then(() => {
+            setImplicitSampleCount(
+              continuousCalibratorRef.current?.getPendingCount() ?? 0
+            );
+          })
+          .catch(() => {});
+      }
+    }
+  }, [handleKeySelect, settings.continuousCalibration]);
 
   // Handle prediction selection
   const handlePredictionSelect = useCallback((word: string) => {
@@ -276,7 +390,7 @@ export default function TypePage() {
           <VirtualKeyboard
             gazePoint={gazePoint}
             settings={settings}
-            onKeySelect={handleKeySelect}
+            onKeySelect={handleKeySelectWithCalibration}
             shifted={shifted}
             onShiftToggle={() => setShifted((s) => !s)}
           />
@@ -292,6 +406,7 @@ export default function TypePage() {
           onGazeUpdate={handleGazeUpdate}
           onBlink={handleBlink}
           enabled={isReady && cameraActive}
+          onTrackerReady={handleTrackerReady}
         />
       )}
 
@@ -321,6 +436,14 @@ export default function TypePage() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {/* Typing analytics panel */}
+      <AnalyticsPanel
+        liveAnalytics={liveAnalytics}
+        sessionDuration={sessionDuration}
+        implicitSampleCount={implicitSampleCount}
+        visible={settings.showAnalytics}
+      />
     </main>
   );
 }

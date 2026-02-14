@@ -60,6 +60,74 @@ export interface CalibrationModel {
   sampleCount: number;
 }
 
+/** Neural network layer weights */
+export interface NNLayer {
+  weights: number[][];  // [outputDim][inputDim]
+  biases: number[];     // [outputDim]
+}
+
+/** Neural network gaze model (MLP: 12 → 32 → 16 → 2) */
+export interface NeuralGazeModel {
+  layers: NNLayer[];
+  quality: number;
+  calibratedAt: number;
+  sampleCount: number;
+  /** Training loss history */
+  lossHistory: number[];
+  /** Target normalization parameters (min/max used during training) */
+  targetNorm?: {
+    minX: number; maxX: number;
+    minY: number; maxY: number;
+  };
+}
+
+/** Typing session record */
+export interface TypingSession {
+  id: string;
+  startTime: number;
+  endTime: number;
+  /** Total characters typed (excluding backspaces) */
+  totalChars: number;
+  /** Total keystrokes including backspaces */
+  totalKeystrokes: number;
+  /** Number of backspace presses */
+  backspaceCount: number;
+  /** Words per minute */
+  wpm: number;
+  /** Accuracy: 1 - (backspaces / totalKeystrokes) */
+  accuracy: number;
+  /** Final text produced */
+  finalText: string;
+}
+
+/** Live typing analytics (tracked during a session) */
+export interface TypingAnalytics {
+  sessionStart: number;
+  totalChars: number;
+  totalKeystrokes: number;
+  backspaceCount: number;
+  /** Timestamps of each word completion (space/punctuation after word) */
+  wordTimestamps: number[];
+  /** Rolling WPM over last 60 seconds */
+  currentWpm: number;
+  /** Overall WPM for the session */
+  overallWpm: number;
+  /** Current accuracy */
+  accuracy: number;
+}
+
+/** Continuous calibration config */
+export interface ContinuousCalibrationConfig {
+  /** Whether continuous calibration is enabled */
+  enabled: boolean;
+  /** Minimum dwell confidence to accept as implicit sample */
+  minDwellConfidence: number;
+  /** Number of implicit samples before retraining */
+  retrainThreshold: number;
+  /** Maximum stored implicit samples (FIFO) */
+  maxSamples: number;
+}
+
 /** User settings / preferences */
 export interface UserSettings {
   /** Dwell time in milliseconds for key selection */
@@ -88,6 +156,12 @@ export interface UserSettings {
   smoothingFactor: number;
   /** Blink detection EAR threshold */
   blinkThreshold: number;
+  /** Use neural network model instead of ridge regression */
+  useNeuralModel: boolean;
+  /** Enable continuous calibration */
+  continuousCalibration: boolean;
+  /** Show typing analytics panel */
+  showAnalytics: boolean;
 }
 
 /** Default settings */
@@ -105,6 +179,9 @@ export const DEFAULT_SETTINGS: UserSettings = {
   debugMode: false,
   smoothingFactor: 0.5,
   blinkThreshold: 0.21,
+  useNeuralModel: false,
+  continuousCalibration: true,
+  showAnalytics: true,
 };
 
 /** Blink event */

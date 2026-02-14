@@ -12,5 +12,5 @@ module.exports = {
       jsx: 'react-jsx',
     }],
   },
-  setupFilesAfterSetup: undefined,
+  setupFiles: ['<rootDir>/tests/setup.ts'],
 };

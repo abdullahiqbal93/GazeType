@@ -7,6 +7,8 @@ import { GazeTracker } from '@/lib/gazeTracker';
 import { generateCalibrationPoints, fitCalibrationModel, SAMPLES_PER_POINT } from '@/lib/calibration';
 import { CalibrationSample, GazeRatios, HeadPose, UserSettings, DEFAULT_SETTINGS } from '@/lib/types';
 import { saveCalibration } from '@/lib/storage';
+import { saveCalibrationSamples, saveRidgeModel, saveNeuralModel } from '@/lib/idb';
+import { trainNeuralModel } from '@/lib/neuralGaze';
 
 /**
  * Calibration page: 9-point calibration flow.
@@ -20,6 +22,7 @@ export default function CalibratePage() {
   const [currentPoint, setCurrentPoint] = useState(0);
   const [sampleCount, setSampleCount] = useState(0);
   const [quality, setQuality] = useState(0);
+  const [neuralQuality, setNeuralQuality] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
   const samplesRef = useRef<CalibrationSample[]>([]);
   const collectingRef = useRef(false);
@@ -105,6 +108,26 @@ export default function CalibratePage() {
             try {
               const model = fitCalibrationModel(samplesRef.current);
               saveCalibration(model);
+
+              // Save to IndexedDB (samples + ridge model + neural model)
+              saveCalibrationSamples(samplesRef.current).catch((e) =>
+                console.warn('IDB samples save failed:', e)
+              );
+              saveRidgeModel(model).catch((e) =>
+                console.warn('IDB ridge save failed:', e)
+              );
+
+              // Train neural network model in background
+              try {
+                const nnModel = trainNeuralModel(samplesRef.current);
+                saveNeuralModel(nnModel).catch((e) =>
+                  console.warn('IDB neural save failed:', e)
+                );
+                setNeuralQuality(nnModel.quality);
+              } catch (nnErr) {
+                console.warn('Neural model training failed:', nnErr);
+              }
+
               setQuality(model.quality);
               setStep('done');
             } catch (err) {
@@ -254,11 +277,18 @@ export default function CalibratePage() {
         <div className="flex flex-col items-center justify-center min-h-screen px-4">
           <span className="text-5xl mb-6">✅</span>
           <h1 className="text-3xl font-bold mb-4">Calibration Complete!</h1>
-          <p className="text-gray-400 mb-2">
-            Quality score: <span className={quality > 0.6 ? 'text-green-400' : quality > 0.3 ? 'text-yellow-400' : 'text-red-400'}>
+          <p className="text-gray-400 mb-1">
+            Ridge regression quality: <span className={quality > 0.6 ? 'text-green-400' : quality > 0.3 ? 'text-yellow-400' : 'text-red-400'}>
               {(quality * 100).toFixed(0)}%
             </span>
           </p>
+          {neuralQuality !== null && (
+            <p className="text-gray-400 mb-2">
+              🧠 Neural network quality: <span className={neuralQuality > 0.6 ? 'text-green-400' : neuralQuality > 0.3 ? 'text-yellow-400' : 'text-red-400'}>
+                {(neuralQuality * 100).toFixed(0)}%
+              </span>
+            </p>
+          )}
           <p className="text-gray-500 text-sm mb-8 max-w-md text-center">
             {quality > 0.6
               ? 'Great calibration! You should have accurate gaze tracking.'

@@ -1,9 +1,11 @@
 /**
  * Storage utilities for persisting user settings and calibration data.
- * Uses localStorage for simplicity (works offline, no backend needed).
+ * Uses localStorage for settings (small data, synchronous access).
+ * Also syncs calibration to IndexedDB for larger dataset support.
  */
 
 import { CalibrationModel, UserSettings, DEFAULT_SETTINGS } from './types';
+import { saveRidgeModel } from './idb';
 
 const STORAGE_KEYS = {
   settings: 'gazetype_settings',
@@ -41,11 +43,13 @@ export function loadSettings(): UserSettings {
 }
 
 /**
- * Save calibration model to localStorage.
+ * Save calibration model to localStorage and IndexedDB.
  */
 export function saveCalibration(model: CalibrationModel): void {
   try {
     localStorage.setItem(STORAGE_KEYS.calibration, JSON.stringify(model));
+    // Also save to IndexedDB for larger dataset support
+    saveRidgeModel(model).catch((e) => console.warn('IDB sync failed:', e));
   } catch (e) {
     console.warn('Failed to save calibration:', e);
   }

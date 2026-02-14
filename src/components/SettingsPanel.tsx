@@ -113,6 +113,9 @@ export default function SettingsPanel({
             { key: 'audioFeedback', label: 'Audio Feedback' },
             { key: 'predictionsEnabled', label: 'Word Predictions' },
             { key: 'autoSpeak', label: 'Auto-Speak Sentences' },
+            { key: 'useNeuralModel', label: '🧠 Neural Network Model' },
+            { key: 'continuousCalibration', label: '🔄 Continuous Calibration' },
+            { key: 'showAnalytics', label: '📊 Typing Analytics' },
             { key: 'debugMode', label: 'Debug Mode' },
           ].map(({ key, label }) => (
             <label key={key} className="flex items-center justify-between cursor-pointer">

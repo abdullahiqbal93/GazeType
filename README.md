@@ -11,11 +11,15 @@ A production-ready MVP of a webcam-based eye-controlled typing web application. 
 
 - **👀 Real-time gaze tracking** — tracks iris position using MediaPipe Face Mesh (478 landmarks with iris tracking)
 - **🎯 9-point calibration** — ridge regression model maps eye ratios to screen coordinates
+- **🧠 Neural network gaze model** — optional MLP (12→32→16→2) trained on calibration data for higher accuracy with target normalization
+- **🔄 Continuous calibration** — adapts the model over time using implicit feedback from key selections
 - **⌨️ Virtual QWERTY keyboard** — dwell-to-select with configurable dwell time
 - **😉 Blink-to-select** — optional blink detection using Eye Aspect Ratio (EAR)
 - **🔮 Word prediction** — n-gram based autocomplete with top-3 suggestions
 - **🔊 Text-to-speech** — Web Speech API integration with voice/rate selection
+- **📊 Typing analytics** — live WPM, accuracy, rolling WPM, and session history tracking
 - **📊 EMA smoothing** — reduces gaze cursor jitter for usable typing
+- **💾 IndexedDB storage** — persistent storage for calibration data, models, implicit samples, and session history
 - **♿ Accessibility settings** — dwell time, key size, high contrast, audio feedback
 - **🔒 100% private** — all processing happens locally in the browser, no video frames ever uploaded
 - **🐛 Debug mode** — visualize gaze point, FPS, and eye ratios in real-time
@@ -58,6 +62,7 @@ gazetype/
 │   │   ├── VirtualKeyboard.tsx # QWERTY keyboard with dwell selection
 │   │   ├── PredictionBar.tsx  # Word prediction suggestions
 │   │   ├── SettingsPanel.tsx  # Accessibility & preference settings
+│   │   ├── AnalyticsPanel.tsx # Live typing analytics display
 │   │   ├── DebugOverlay.tsx   # Debug info display
 │   │   └── AppContext.tsx     # Global state management
 │   └── lib/                   # Core logic modules
@@ -65,18 +70,26 @@ gazetype/
 │       ├── gazeMath.ts        # Iris ratio extraction, head pose, EAR
 │       ├── gazeTracker.ts     # MediaPipe integration & tracking engine
 │       ├── calibration.ts     # Ridge regression calibration model
+│       ├── neuralGaze.ts      # Neural network MLP gaze model
+│       ├── continuousCalibration.ts # Implicit feedback calibration
+│       ├── analytics.ts       # Typing analytics tracker (WPM, accuracy)
 │       ├── smoothing.ts       # EMA & moving average smoothers
 │       ├── blink.ts           # Blink detection via EAR threshold
 │       ├── ngram.ts           # N-gram word prediction
 │       ├── keyboardLayout.ts  # QWERTY layout definition
 │       ├── storage.ts         # localStorage persistence
+│       ├── idb.ts             # IndexedDB storage for large datasets
 │       └── tts.ts             # Text-to-speech wrapper
 ├── tests/                     # Unit tests
 │   ├── calibration.test.ts
 │   ├── smoothing.test.ts
 │   ├── gazeMath.test.ts
 │   ├── ngram.test.ts
-│   └── blink.test.ts
+│   ├── blink.test.ts
+│   ├── neuralGaze.test.ts
+│   ├── analytics.test.ts
+│   ├── idb.test.ts
+│   └── setup.ts              # Jest polyfills
 └── package.json
 ```
 
@@ -95,6 +108,27 @@ The mapping from eye ratios to screen coordinates uses ridge regression with pol
 - Regularization prevents overfitting with only 9×30 = 270 calibration samples
 - Fast closed-form solution (no iterative optimization)
 - Gaussian elimination solver implemented from scratch (no heavy linear algebra deps needed at runtime)
+
+### Neural Network Gaze Model (Optional)
+An alternative MLP model (12→32→16→2) trained on the same calibration data, with:
+- **Target normalization** — targets scaled to [0,1] during training, denormalized on prediction, for stable gradient convergence
+- **Xavier initialization** — proper weight scaling for deep networks
+- **ReLU activations** on hidden layers, linear output
+- **Mini-batch SGD with momentum** (0.9) and L2 regularization (λ=0.0001)
+- **Fine-tuning support** — can be incrementally updated via continuous calibration
+
+**Why offer neural alongside ridge:**
+- Better captures non-linear eye-to-screen mapping (especially at screen edges)
+- Can be fine-tuned with implicit feedback from typing (continuous calibration)
+- Ridge regression remains the default for its speed and reliability; neural mode is opt-in
+
+### Continuous Calibration
+Records implicit samples whenever the user selects a key — using the gaze position at selection time as a training datum for that key's screen center. After accumulating enough samples (default: 20), both ridge and neural models are retrained in the background.
+
+**Design choices:**
+- Maximum 200 implicit samples retained (FIFO to prevent unbounded growth)
+- Minimum 30s between retraining passes to avoid churn
+- Implicit samples complement (not replace) the original calibration data
 
 ### Smoothing: Exponential Moving Average
 `smoothed = α × new + (1-α) × previous` with default α = 0.3.
@@ -125,6 +159,9 @@ A ~200-word common English dictionary with bigram frequency tables. Prefix match
 | Show Cursor | On/Off | On | Display gaze cursor overlay |
 | Debug Mode | On/Off | Off | Show FPS, ratios, coordinates |
 | Auto-Speak | On/Off | Off | TTS reads completed sentences |
+| Neural Network | On/Off | Off | Use MLP model instead of ridge regression |
+| Continuous Calibration | On/Off | On | Adapt model from typing feedback |
+| Typing Analytics | On/Off | On | Show live WPM and accuracy stats |
 
 ## Tests
 
@@ -132,12 +169,15 @@ A ~200-word common English dictionary with bigram frequency tables. Prefix match
 npm test
 ```
 
-Runs 34 unit tests covering:
+Runs 68 unit tests covering:
 - Calibration point generation and model fitting (R² quality)
 - EMA and moving average smoothing convergence
 - Feature vector construction and screen coordinate mapping
 - N-gram prediction with prefix and bigram matching
 - Blink detection with EAR thresholds
+- Neural network creation, training, convergence, and prediction
+- IndexedDB storage for calibration, models, sessions, and implicit samples
+- Typing analytics tracking (WPM, accuracy, keystrokes, sessions)
 
 ## Manual Test Checklist
 
@@ -168,7 +208,7 @@ Runs 34 unit tests covering:
 
 - Camera frames are processed **entirely in-browser** using MediaPipe's WASM runtime
 - **No video data** is ever sent over the network
-- Calibration data and settings stored in **localStorage only**
+- Calibration data and settings stored in **localStorage + IndexedDB** (local only)
 - Visible "Camera On" indicator when webcam is active
 - One-click "Stop Camera" button available at all times
 - No analytics, tracking, or telemetry
@@ -184,15 +224,11 @@ Runs 34 unit tests covering:
 
 ## Future Improvements
 
-- 🧠 **Better gaze model** — train a small neural network on calibration data for higher accuracy
-- 🔄 **Continuous calibration** — adapt the model over time using implicit feedback
 - 👤 **Robust head pose** — full 6-DoF head pose estimation to handle movement
 - 🌍 **Multilingual predictions** — support multiple language dictionaries
 - ✏️ **Error correction** — auto-correct based on word context
 - 📱 **Mobile support** — adapt for tablet/phone front cameras
 - 🎨 **Custom keyboard layouts** — AZERTY, Dvorak, symbol layers
-- 💾 **IndexedDB storage** — for larger calibration datasets
-- 📊 **Typing analytics** — WPM tracking, accuracy stats
 - 🔌 **WebSocket API** — expose gaze data for external applications
 
 ## Tech Stack
@@ -200,11 +236,11 @@ Runs 34 unit tests covering:
 - **Frontend:** Next.js 16, React, TypeScript, TailwindCSS 4
 - **Computer Vision:** MediaPipe Face Mesh (478-landmark model with iris tracking)
 - **Smoothing:** Custom EMA implementation
-- **Calibration:** Ridge regression with polynomial features
+- **Calibration:** Ridge regression with polynomial features + optional MLP neural network
 - **Predictions:** N-gram dictionary with bigram context
 - **TTS:** Web Speech API (speechSynthesis)
-- **Storage:** localStorage
-- **Testing:** Jest + ts-jest
+- **Storage:** localStorage + IndexedDB
+- **Testing:** Jest + ts-jest + fake-indexeddb
 
 ## License
 

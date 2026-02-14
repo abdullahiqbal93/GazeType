@@ -8,7 +8,7 @@ import { playClick } from '@/lib/tts';
 interface VirtualKeyboardProps {
   gazePoint: Point2D | null;
   settings: UserSettings;
-  onKeySelect: (key: KeyDef) => void;
+  onKeySelect: (key: KeyDef, keyCenter?: Point2D) => void;
   shifted: boolean;
   onShiftToggle: () => void;
 }
@@ -39,7 +39,7 @@ export default function VirtualKeyboard({
   }[settings.keySize];
 
   // Check which key the gaze point is over
-  const findKeyUnderGaze = useCallback((): { id: string; def: KeyDef } | null => {
+  const findKeyUnderGaze = useCallback((): { id: string; def: KeyDef; center: Point2D } | null => {
     if (!gazePoint || !containerRef.current) return null;
 
     const keys = containerRef.current.querySelectorAll('[data-key-id]');
@@ -54,7 +54,11 @@ export default function VirtualKeyboard({
         const id = keyEl.getAttribute('data-key-id') || '';
         const rowIdx = parseInt(keyEl.getAttribute('data-row') || '0');
         const colIdx = parseInt(keyEl.getAttribute('data-col') || '0');
-        return { id, def: KEYBOARD_ROWS[rowIdx][colIdx] };
+        const center: Point2D = {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        };
+        return { id, def: KEYBOARD_ROWS[rowIdx][colIdx], center };
       }
     }
     return null;
@@ -91,7 +95,7 @@ export default function VirtualKeyboard({
           if (keyUnderGaze.def.type === 'shift') {
             onShiftToggle();
           } else {
-            onKeySelect(keyUnderGaze.def);
+            onKeySelect(keyUnderGaze.def, keyUnderGaze.center);
           }
 
           if (settings.audioFeedback) {
@@ -151,7 +155,9 @@ export default function VirtualKeyboard({
                   if (key.type === 'shift') {
                     onShiftToggle();
                   } else {
-                    onKeySelect(key);
+                    const rect = (document.querySelector(`[data-key-id="${keyId}"]`) as HTMLElement)?.getBoundingClientRect();
+                    const center = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined;
+                    onKeySelect(key, center);
                   }
                   if (settings.audioFeedback) playClick();
                 }}
