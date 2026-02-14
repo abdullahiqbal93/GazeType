@@ -116,7 +116,6 @@ export default function SettingsPanel({
             { key: 'useNeuralModel', label: '🧠 Neural Network Model' },
             { key: 'continuousCalibration', label: '🔄 Continuous Calibration' },
             { key: 'showAnalytics', label: '📊 Typing Analytics' },
-            { key: 'debugMode', label: 'Debug Mode' },
           ].map(({ key, label }) => (
             <label key={key} className="flex items-center justify-between cursor-pointer">
               <span className="text-sm">{label}</span>

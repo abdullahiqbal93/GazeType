@@ -150,8 +150,6 @@ export interface UserSettings {
   ttsRate: number;
   /** Enable word predictions */
   predictionsEnabled: boolean;
-  /** Debug mode - show overlays */
-  debugMode: boolean;
   /** Smoothing factor for EMA (0-1, higher = more smoothing) */
   smoothingFactor: number;
   /** Blink detection EAR threshold */
@@ -176,7 +174,6 @@ export const DEFAULT_SETTINGS: UserSettings = {
   ttsVoice: '',
   ttsRate: 1.0,
   predictionsEnabled: true,
-  debugMode: false,
   smoothingFactor: 0.5,
   blinkThreshold: 0.21,
   useNeuralModel: false,

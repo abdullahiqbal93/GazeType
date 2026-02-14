@@ -8,7 +8,6 @@ import GazeCursor from '@/components/GazeCursor';
 import VirtualKeyboard from '@/components/VirtualKeyboard';
 import PredictionBar from '@/components/PredictionBar';
 import SettingsPanel from '@/components/SettingsPanel';
-import DebugOverlay from '@/components/DebugOverlay';
 import AnalyticsPanel from '@/components/AnalyticsPanel';
 import { GazeTracker, GazeFrame } from '@/lib/gazeTracker';
 import { CalibrationModel, KeyDef, NeuralGazeModel, Point2D, TypingAnalytics, UserSettings, DEFAULT_SETTINGS } from '@/lib/types';
@@ -53,10 +52,6 @@ export default function TypePage() {
 
   // Neural model state
   const [neuralModel, setNeuralModel] = useState<NeuralGazeModel | null>(null);
-
-  // Debug state
-  const [debugFps, setDebugFps] = useState(0);
-  const [debugRatios, setDebugRatios] = useState<{ avgX: number; avgY: number } | null>(null);
 
   // Load calibration, settings, and models on mount
   useEffect(() => {
@@ -162,12 +157,8 @@ export default function TypePage() {
   }, []);
 
   // Handle gaze update from engine
-  const handleGazeUpdate = useCallback((point: Point2D | null, frame: GazeFrame) => {
+  const handleGazeUpdate = useCallback((point: Point2D | null, _frame: GazeFrame) => {
     setGazePoint(point);
-    setDebugFps(frame.fps);
-    if (frame.ratios) {
-      setDebugRatios({ avgX: frame.ratios.avgX, avgY: frame.ratios.avgY });
-    }
   }, []);
 
   // Handle tracker ready (store reference for continuous calibration)
@@ -276,7 +267,8 @@ export default function TypePage() {
               } else {
                 handleKeySelectWithCalibration(keyDef, center);
               }
-              if (settings.audioFeedback) playClick();
+              const soundTypes: string[] = ['char', 'space', 'backspace', 'clear', 'enter'];
+              if (settings.audioFeedback && soundTypes.includes(keyDef.type || 'char')) playClick();
               return;
             }
           }
@@ -314,6 +306,7 @@ export default function TypePage() {
     setCameraActive(false);
     setGazePoint(null);
     setVideoEl(null);
+    setIsReady(false);
   }, []);
 
   // Start camera (re-mount webcam)
@@ -468,17 +461,6 @@ export default function TypePage() {
       <GazeCursor
         point={gazePoint}
         visible={settings.showGazeCursor && cameraActive}
-        debug={settings.debugMode}
-      />
-
-      {/* Debug overlay */}
-      <DebugOverlay
-        fps={debugFps}
-        ratios={debugRatios}
-        gazeX={gazePoint?.x ?? null}
-        gazeY={gazePoint?.y ?? null}
-        calibrated={!!calibration}
-        visible={settings.debugMode}
       />
 
       {/* Settings panel */}

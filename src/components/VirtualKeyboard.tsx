@@ -98,7 +98,8 @@ export default function VirtualKeyboard({
             onKeySelect(keyUnderGaze.def, keyUnderGaze.center);
           }
 
-          if (settings.audioFeedback) {
+          const soundTypes: string[] = ['char', 'space', 'backspace', 'clear', 'enter'];
+          if (settings.audioFeedback && soundTypes.includes(keyUnderGaze.def.type || 'char')) {
             playClick();
           }
         }, settings.dwellTime);
@@ -160,7 +161,8 @@ export default function VirtualKeyboard({
                     const center = rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : undefined;
                     onKeySelect(key, center);
                   }
-                  if (settings.audioFeedback) playClick();
+                  const soundTypes: string[] = ['char', 'space', 'backspace', 'clear', 'enter'];
+                  if (settings.audioFeedback && soundTypes.includes(key.type || 'char')) playClick();
                 }}
               >
                 {/* Dwell progress bar */}
